@@ -376,6 +376,22 @@ document.addEventListener('DOMContentLoaded', function() {
             );
         }
 
+        function unlockMobileAudio() {
+            mobileShutterAudio.play().then(function() {
+                mobileShutterAudio.pause();
+                mobileShutterAudio.currentTime = 0;
+            }).catch(function() {});
+        }
+        if (mobilePreload) {
+            var unlockOnce = function() {
+                unlockMobileAudio();
+                mobilePreload.removeEventListener('touchstart', unlockOnce);
+                mobilePreload.removeEventListener('click', unlockOnce);
+            };
+            mobilePreload.addEventListener('touchstart', unlockOnce, { passive: true, once: true });
+            mobilePreload.addEventListener('click', unlockOnce, { once: true });
+        }
+
         function runMobileAutoHeroBlur(onComplete) {
             const rearview = document.getElementById('mobilePreloadHeroRearview');
             const fragments = document.getElementById('mobilePreloadHeroFragments');
@@ -466,6 +482,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }));
         }
 
+        const MOBILE_COUNTER_DURATION = 3;
         function runMobilePreloadPhase2() {
             const rearview = document.getElementById('mobilePreloadHeroRearview');
             const fragments = document.getElementById('mobilePreloadHeroFragments');
@@ -473,16 +490,32 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!counterEl) return;
             gsap.to(rearview, { opacity: 0, duration: 0.4, ease: 'power2.in' });
             gsap.to(fragments, { opacity: 0, duration: 0.4, ease: 'power2.in' });
-            counterEl.textContent = '0';
+            setCounterDisplay(counterEl, 0);
             gsap.set(counterEl, { opacity: 0 });
             gsap.to(counterEl, { opacity: 1, duration: 0.3, delay: 0.35, ease: 'power2.out' });
-            preloadAllImages(function(pct) {
-                counterEl.textContent = pct;
-            }).then(function() {
-                counterEl.textContent = '100';
-                setTimeout(function() {
-                    runMobilePreloadDismiss();
-                }, 200);
+            function setCounterDisplay(el, val) {
+                if (val === 100) {
+                    el.innerHTML = '<span class="counter-one">1</span>00';
+                } else {
+                    el.textContent = val;
+                }
+            }
+            const counterObj = { value: 0 };
+            const counterTween = gsap.to(counterObj, {
+                value: 100,
+                duration: MOBILE_COUNTER_DURATION,
+                delay: 0.35,
+                ease: 'power2.out',
+                onUpdate: function() {
+                    setCounterDisplay(counterEl, Math.round(counterObj.value));
+                }
+            });
+            Promise.all([
+                preloadAllImages(),
+                counterTween.then()
+            ]).then(function() {
+                setCounterDisplay(counterEl, 100);
+                setTimeout(runMobilePreloadDismiss, 200);
             });
         }
 
@@ -543,8 +576,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         let mobileGalleryAnimating = false;
                         let lastNavTime = 0;
                         const NAV_COOLDOWN_MS = 350;
+                        const mobileGalleryImgWrap = document.getElementById('mobileGalleryImgWrap');
                         function goToMobileImage(index) {
-                            if (mobileGalleryAnimating) return;
+                            if (mobileGalleryAnimating || !mobileGalleryImgWrap) return;
                             const now = Date.now();
                             if (now - lastNavTime < NAV_COOLDOWN_MS) return;
                             mobileGalleryAnimating = true;
@@ -553,36 +587,28 @@ document.addEventListener('DOMContentLoaded', function() {
                             const idx = ((index % len) + len) % len;
                             const newSrc = mobileGalleryOrder[idx];
                             const dir = index > mobileFocusIndex ? 1 : -1;
-                            const preloader = new Image();
-                            let didStartTransition = false;
-                            preloader.onload = preloader.onerror = function() {
-                                if (didStartTransition) return;
-                                didStartTransition = true;
-                                gsap.to(mobileGalleryImg, {
-                                    x: -dir * 30,
-                                    opacity: 0,
-                                    duration: 0.2,
-                                    ease: 'power2.in',
-                                    onComplete: function() {
-                                        mobileFocusIndex = idx;
-                                        mobileGalleryImg.src = newSrc;
-                                        updateMobileGridLabel();
-                                        gsap.set(mobileGalleryImg, { x: dir * 30 });
-                                        gsap.to(mobileGalleryImg, {
-                                            x: 0,
-                                            opacity: 1,
-                                            duration: 0.25,
-                                            ease: 'power3.out',
-                                            onComplete: function() {
-                                                gsap.set(mobileGalleryImg, { clearProps: 'x' });
-                                                mobileGalleryAnimating = false;
-                                            }
-                                        });
-                                    }
+                            mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap mobile-gallery-slide-out-' + (dir === 1 ? 'left' : 'right');
+                            function onOutEnd(e) {
+                                if (e.propertyName !== 'transform') return;
+                                mobileGalleryImgWrap.removeEventListener('transitionend', onOutEnd);
+                                mobileFocusIndex = idx;
+                                mobileGalleryImg.src = newSrc;
+                                updateMobileGridLabel();
+                                mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap mobile-gallery-slide-in-from-' + (dir === 1 ? 'right' : 'left') + ' mobile-gallery-slide-no-transition';
+                                void mobileGalleryImgWrap.offsetHeight;
+                                requestAnimationFrame(function() {
+                                    mobileGalleryImgWrap.classList.remove('mobile-gallery-slide-no-transition');
+                                    mobileGalleryImgWrap.classList.add('mobile-gallery-slide-active');
                                 });
-                            };
-                            preloader.src = newSrc;
-                            if (preloader.complete) preloader.onload();
+                                function onInEnd(e2) {
+                                    if (e2.propertyName !== 'transform') return;
+                                    mobileGalleryImgWrap.removeEventListener('transitionend', onInEnd);
+                                    mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap';
+                                    mobileGalleryAnimating = false;
+                                }
+                                mobileGalleryImgWrap.addEventListener('transitionend', onInEnd);
+                            }
+                            mobileGalleryImgWrap.addEventListener('transitionend', onOutEnd);
                         }
                         mobileGalleryView.addEventListener('touchstart', (e) => {
                             if (e.touches.length === 1) swipeStartX = e.touches[0].pageX;
@@ -667,10 +693,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!infoOverlay) return;
         if (mobile) {
             document.body.classList.add('is-overlay-open');
-            const img = document.getElementById('mobileGalleryImg');
-            const inner = document.querySelector('.mobile-gallery-inner');
-            if (img) gsap.set(img, { clearProps: 'all' });
-            if (inner) gsap.set(inner, { clearProps: 'all' });
+            const wrap = document.getElementById('mobileGalleryImgWrap');
+            if (wrap) wrap.className = 'mobile-gallery-img-wrap';
             void document.body.offsetHeight;
         } else {
             document.body.classList.add('is-overlay-open');
@@ -932,29 +956,26 @@ document.addEventListener('DOMContentLoaded', function() {
         const prevIndex = currentFocusIndex;
         currentFocusIndex = ((index % len) + len) % len;
         const newSrc = galleryOrder[currentFocusIndex];
-        const goingNext = index > prevIndex;
-        const dir = goingNext ? 1 : -1;
-        const slideDist = 60;
-
-        gsap.to(galleryFocusInner, {
-            x: -dir * slideDist,
-            opacity: 0,
-            duration: 0.35,
-            ease: 'power2.in',
-            onComplete: function() {
-                gsap.set(galleryFocusInner, { x: dir * slideDist });
-                galleryFocusImg.src = newSrc;
-                gsap.to(galleryFocusInner, {
-                    x: 0,
-                    opacity: 1,
-                    duration: 0.4,
-                    ease: 'power3.out',
-                    onComplete: function() {
-                        gsap.set(galleryFocusInner, { clearProps: 'x' });
-                    }
-                });
+        const dir = index > prevIndex ? 1 : -1;
+        galleryFocusInner.className = 'gallery-focus-inner gallery-focus-slide-out-' + (dir === 1 ? 'left' : 'right');
+        function onOutEnd(e) {
+            if (e.propertyName !== 'transform') return;
+            galleryFocusInner.removeEventListener('transitionend', onOutEnd);
+            galleryFocusImg.src = newSrc;
+            galleryFocusInner.className = 'gallery-focus-inner gallery-focus-slide-in-from-' + (dir === 1 ? 'right' : 'left') + ' gallery-focus-slide-no-transition';
+            void galleryFocusInner.offsetHeight;
+            requestAnimationFrame(function() {
+                galleryFocusInner.classList.remove('gallery-focus-slide-no-transition');
+                galleryFocusInner.classList.add('gallery-focus-slide-active');
+            });
+            function onInEnd(e2) {
+                if (e2.propertyName !== 'transform') return;
+                galleryFocusInner.removeEventListener('transitionend', onInEnd);
+                galleryFocusInner.className = 'gallery-focus-inner';
             }
-        });
+            galleryFocusInner.addEventListener('transitionend', onInEnd);
+        }
+        galleryFocusInner.addEventListener('transitionend', onOutEnd);
     }
 
     function openGalleryFocus(src, wrapEl) {
@@ -1026,6 +1047,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 galleryFocus.setAttribute('aria-hidden', 'true');
                 gsap.set(galleryFocus, { opacity: 0, backgroundColor: '' });
                 gsap.set(galleryFocusInner, { clearProps: 'all' });
+                if (galleryFocusInner) galleryFocusInner.className = 'gallery-focus-inner';
                 if (galleryFocusClose) gsap.set(galleryFocusClose, { opacity: 0 });
 
                 gsap.set(wraps, { opacity: 1, y: 0 });
