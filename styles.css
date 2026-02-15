@@ -137,6 +137,7 @@ body:not(.is-mobile) .mobile-preload {
     align-items: center;
     justify-content: center;
     background: #fff;
+    pointer-events: none;
 }
 
 .mobile-preload-hero {
@@ -172,6 +173,21 @@ body:not(.is-mobile) .mobile-preload {
     z-index: 1;
     opacity: 0;
     transform: translate(-50%, -50%) scale(1.15);
+}
+
+.mobile-preload-counter {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Hiragino Kaku Gothic Std', sans-serif;
+    font-size: clamp(24px, 6.5vw, 56px);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    color: #F06DA8;
+    z-index: 3;
+    opacity: 0;
+    pointer-events: none;
 }
 
 body.is-mobile.mobile-preload-dismissed .mobile-preload {

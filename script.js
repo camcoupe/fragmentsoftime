@@ -376,7 +376,7 @@ document.addEventListener('DOMContentLoaded', function() {
             );
         }
 
-        function runMobileAutoHeroBlur() {
+        function runMobileAutoHeroBlur(onComplete) {
             const rearview = document.getElementById('mobilePreloadHeroRearview');
             const fragments = document.getElementById('mobilePreloadHeroFragments');
             if (!rearview || !fragments) return;
@@ -435,6 +435,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             fragments.style.textShadow = 'none';
                             rearview.style.opacity = '1';
                             showingFragments = tempShowing;
+                            if (typeof onComplete === 'function') onComplete();
                         }
                         requestAnimationFrame(smearRampDown);
                     }, MOBILE_BLUR_HOLD_MS);
@@ -444,7 +445,50 @@ document.addEventListener('DOMContentLoaded', function() {
             requestAnimationFrame(smearRampUp);
         }
 
-        setTimeout(runMobileAutoHeroBlur, 1500);
+        function preloadAllImages(onProgress) {
+            const urls = [...PRELOAD_HERO_IMAGES];
+            let loaded = 0;
+            const total = urls.length;
+            if (total === 0) {
+                if (onProgress) onProgress(100);
+                return Promise.resolve();
+            }
+            return Promise.all(urls.map(function(src) {
+                return new Promise(function(resolve) {
+                    const img = new Image();
+                    img.onload = img.onerror = function() {
+                        loaded++;
+                        if (onProgress) onProgress(Math.round((loaded / total) * 100));
+                        resolve();
+                    };
+                    img.src = src;
+                });
+            }));
+        }
+
+        function runMobilePreloadPhase2() {
+            const rearview = document.getElementById('mobilePreloadHeroRearview');
+            const fragments = document.getElementById('mobilePreloadHeroFragments');
+            const counterEl = document.getElementById('mobilePreloadCounter');
+            if (!counterEl) return;
+            gsap.to(rearview, { opacity: 0, duration: 0.4, ease: 'power2.in' });
+            gsap.to(fragments, { opacity: 0, duration: 0.4, ease: 'power2.in' });
+            counterEl.textContent = '0';
+            gsap.set(counterEl, { opacity: 0 });
+            gsap.to(counterEl, { opacity: 1, duration: 0.3, delay: 0.35, ease: 'power2.out' });
+            preloadAllImages(function(pct) {
+                counterEl.textContent = pct;
+            }).then(function() {
+                counterEl.textContent = '100';
+                setTimeout(function() {
+                    runMobilePreloadDismiss();
+                }, 200);
+            });
+        }
+
+        setTimeout(function() {
+            runMobileAutoHeroBlur(runMobilePreloadPhase2);
+        }, 1500);
 
         let mobileFocusIndex = 0;
         let mobilePreloadHandled = false;
@@ -568,10 +612,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 startImageCycle();
             }
         }
-        if (mobilePreload) {
-            mobilePreload.addEventListener('touchstart', function() { runMobilePreloadDismiss(); }, { passive: true });
-            mobilePreload.addEventListener('click', function() { runMobilePreloadDismiss(); });
-        }
+        /* Mobile preload auto-triggers when image loading completes; touch/click disabled during preload */
     }
 
     if (preload && !mobile) {
