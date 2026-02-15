@@ -147,8 +147,10 @@ body:not(.is-mobile) .mobile-preload {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: opacity 0.4s cubic-bezier(0.55, 0.085, 0.68, 0.53);
 }
 
+/* Mobile preload: hero text, counter, phase transitions */
 .mobile-preload-hero .hero-text {
     position: absolute;
     left: 50%;
@@ -160,7 +162,7 @@ body:not(.is-mobile) .mobile-preload {
     color: #F06DA8;
     text-transform: uppercase;
     white-space: nowrap;
-    transition: opacity 0.3s;
+    transition: opacity 0.4s cubic-bezier(0.55, 0.085, 0.68, 0.53), transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .mobile-preload-hero .hero-rearview {
@@ -173,6 +175,16 @@ body:not(.is-mobile) .mobile-preload {
     z-index: 1;
     opacity: 0;
     transform: translate(-50%, -50%) scale(1.15);
+}
+
+.mobile-preload-hero.mobile-preload-fragments-visible .hero-fragments {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.mobile-preload-hero.mobile-preload-phase2 .hero-rearview,
+.mobile-preload-hero.mobile-preload-phase2 .hero-fragments {
+    opacity: 0;
 }
 
 .mobile-preload-counter {
@@ -188,7 +200,17 @@ body:not(.is-mobile) .mobile-preload {
     z-index: 3;
     opacity: 0;
     pointer-events: none;
+    transition: opacity 0.3s 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
+
+.mobile-preload-hero.mobile-preload-phase2 .mobile-preload-counter {
+    opacity: 1;
+}
+
+.mobile-preload-hero.mobile-preload-hero-fade-out {
+    opacity: 0;
+}
+/* end mobile preload */
 
 .mobile-preload-counter .counter-one {
     margin-right: -0.2em;
@@ -225,6 +247,7 @@ body.is-mobile .mobile-gallery-view.is-visible {
     top: 24px;
     opacity: 0;
     left: 0;
+    transition: opacity 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     right: 0;
     margin: 0 auto;
     width: fit-content;
@@ -310,6 +333,31 @@ body.is-mobile .mobile-gallery-inner {
     touch-action: manipulation;
 }
 
+.mobile-gallery-view.mobile-gallery-ready .mobile-grid-btn {
+    opacity: 1;
+    transition-delay: 0.2s;
+}
+
+.mobile-gallery-footer .footer-info {
+    opacity: 0;
+    transition: opacity 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.mobile-gallery-view.mobile-gallery-ready .mobile-gallery-footer .footer-info {
+    opacity: 1;
+    transition-delay: 0.25s;
+}
+
+.mobile-gallery-footer .home-footer {
+    opacity: 0;
+    transition: opacity 0.4s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.mobile-gallery-view.mobile-gallery-ready .mobile-gallery-footer .home-footer {
+    opacity: 1;
+    transition-delay: 0.3s;
+}
+
 body.is-mobile .mobile-gallery-inner img {
     width: 80vw;
     height: auto;
@@ -319,7 +367,6 @@ body.is-mobile .mobile-gallery-inner img {
 }
 
 .mobile-gallery-footer {
-    opacity: 0;
     margin-top: auto;
     padding: 0 24px calc(12px + env(safe-area-inset-bottom, 0px));
     display: flex;
@@ -465,10 +512,54 @@ body.is-mobile .gallery-track .gallery-img-wrap {
     overflow: hidden;
 }
 
+/* Desktop: gallery focus open/close transitions */
+body:not(.is-mobile) .gallery-focus {
+    background-color: rgba(255, 255, 255, 0);
+    transition: opacity 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                background-color 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
 .gallery-focus.is-open {
     display: flex;
     pointer-events: auto;
 }
+
+body:not(.is-mobile) .gallery-focus.is-open {
+    opacity: 1;
+    background-color: #fff;
+}
+
+body:not(.is-mobile) .gallery-focus.is-open .gallery-focus-inner:not([class*="slide"]) {
+    transform: scale(0.94);
+    opacity: 0;
+    transition: transform 0.5s cubic-bezier(0.215, 0.61, 0.355, 1),
+                opacity 0.5s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+body:not(.is-mobile) .gallery-focus.is-open.is-visible .gallery-focus-inner:not([class*="slide"]) {
+    transform: scale(1);
+    opacity: 1;
+}
+
+body:not(.is-mobile) .gallery-focus .gallery-focus-close {
+    opacity: 0;
+    transition: opacity 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+body:not(.is-mobile) .gallery-focus.is-open.is-visible .gallery-focus-close {
+    opacity: 1;
+}
+
+body:not(.is-mobile) .gallery-focus.gallery-focus-closing {
+    opacity: 0;
+}
+
+body:not(.is-mobile).gallery-focus-closing .main-page .footer-area,
+body:not(.is-mobile).gallery-focus-closing .main-page .home-hero {
+    opacity: 1;
+    transition: opacity 0.5s 0.2s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+/* end desktop gallery focus */
 
 .gallery-focus .gallery-focus-close {
     opacity: 0;
@@ -616,6 +707,27 @@ body.is-mobile .gallery-focus-inner {
     padding: 0 24px 24px;
 }
 
+/* Desktop: footer/hero transitions (preload dismiss, gallery focus) */
+body:not(.is-mobile) .main-page .footer-area {
+    opacity: 0;
+    transition: opacity 0.5s 0.4s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+body:not(.is-mobile) .main-page.has-entered .footer-area {
+    opacity: 1;
+}
+
+body:not(.is-mobile).gallery-focus-open .main-page .footer-area,
+body:not(.is-mobile).gallery-focus-open .main-page .home-hero {
+    opacity: 0;
+    transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+body:not(.is-mobile) .main-page .home-hero {
+    transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+/* end desktop footer/hero */
+
 body.is-mobile .footer-area {
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
@@ -686,6 +798,7 @@ body.is-mobile .footer-area {
     opacity: 0;
     pointer-events: none;
     overflow-x: hidden;
+    transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 body:not(.is-mobile) .info-overlay {
@@ -695,6 +808,15 @@ body:not(.is-mobile) .info-overlay {
 .info-overlay.is-open {
     display: block;
     pointer-events: auto;
+}
+
+.info-overlay.is-open.is-visible {
+    opacity: 1;
+}
+
+.info-overlay.is-closing {
+    opacity: 0;
+    transition-duration: 0.35s;
 }
 
 .info-content {
@@ -840,6 +962,24 @@ body.is-mobile .info-names {
     text-transform: uppercase;
     text-align: center;
 }
+
+.info-names > div {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.4s cubic-bezier(0.215, 0.61, 0.355, 1),
+                transform 0.4s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.info-overlay.is-open.is-visible .info-names > div {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.info-names > div:nth-child(1) { transition-delay: 0.5s; }
+.info-names > div:nth-child(2) { transition-delay: 0.6s; }
+.info-names > div:nth-child(3) { transition-delay: 0.7s; }
+.info-names > div:nth-child(4) { transition-delay: 0.8s; }
+.info-names > div:nth-child(5) { transition-delay: 0.9s; }
 
 .info-close {
     position: fixed;
