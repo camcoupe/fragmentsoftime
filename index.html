@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#3A6155" media="(max-width: 768px)">
+    <title>India - 10th Anniversary</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="custom-cursor" id="customCursor" aria-hidden="true"></div>
+    <!-- Desktop preload -->
+    <div class="preload" id="preload">
+        <div class="preload-bg">
+            <img id="preloadBgImg" src="" alt="">
+        </div>
+        <div class="preload-hero">
+            <span class="hero-text hero-rearview" id="preloadHeroRearview">IN THE REARVIEW</span>
+            <span class="hero-text hero-fragments" id="preloadHeroFragments">FRAGMENTS OF TIME</span>
+        </div>
+    </div>
+
+    <!-- Mobile preload -->
+    <div class="mobile-preload" id="mobilePreload">
+        <div class="mobile-preload-hero">
+            <span class="hero-text hero-rearview" id="mobilePreloadHeroRearview">IN THE REARVIEW</span>
+            <span class="hero-text hero-fragments" id="mobilePreloadHeroFragments">FRAGMENTS OF TIME</span>
+        </div>
+    </div>
+
+    <main class="main-page" id="mainPage">
+        <div class="gallery-scroll-wrap" id="gallerySection" aria-label="Photo gallery">
+            <div class="gallery-track" id="galleryTrack">
+                <!-- Images injected by JS for infinite loop -->
+            </div>
+        </div>
+        <div class="home-hero" aria-hidden="true">
+            <span class="hero-text hero-rearview" id="homeHeroRearview">IN THE REARVIEW</span>
+            <span class="hero-text hero-fragments" id="homeHeroFragments">FRAGMENTS OF TIME</span>
+        </div>
+        <div class="footer-area">
+            <button type="button" class="footer-info" id="infoBtn" aria-label="Open info">INFO</button>
+            <footer class="home-footer">
+                <span class="footer-edition">10ᵗʰ Anniversary Ed.</span>
+                <span class="footer-coords footer-left">25.5788° N, 91.8933° E</span>
+                <span class="footer-title">THE RICKSHAW RUN</span>
+                <span class="footer-coords footer-right">9.9312° N, 76.2673° E</span>
+                <span class="footer-copy">©2025</span>
+            </footer>
+        </div>
+    </main>
+
+    <div class="info-overlay" id="infoOverlay" aria-hidden="true">
+        <div class="info-content">
+            <div class="info-top">
+                <p class="info-intro">A record of the roads we took, the ones we (maybe) shouldn't have, and the places that changed us along the way.</p>
+                <div class="info-links">
+                    <button type="button" class="info-audio" id="infoAudioBtn">Site Audio: Off</button>
+                    <a href="#" class="info-video">
+                        <img src="Design Resources/Play.svg" alt="" class="info-play-btn" width="20" height="20">
+                        Watch Video Recap
+                    </a>
+                </div>
+            </div>
+            <div class="info-names">
+                <div>CAMERON COUPE</div>
+                <div>OSCAR MARCZYNSKI</div>
+                <div>KRISHANG SWAMI</div>
+                <div>JOHNNY KNUTSEN</div>
+                <div>JASON KILLMER</div>
+            </div>
+            <button type="button" class="info-close" id="infoClose">CLOSE</button>
+            <div class="footer-area">
+                <footer class="home-footer">
+                    <span class="footer-edition">10ᵗʰ Anniversary Ed.</span>
+                    <span class="footer-coords footer-left">25.5788° N, 91.8933° E</span>
+                    <span class="footer-title">THE RICKSHAW RUN</span>
+                    <span class="footer-coords footer-right">9.9312° N, 76.2673° E</span>
+                    <span class="footer-copy">©2025</span>
+                </footer>
+            </div>
+        </div>
+    </div>
+
+    <div class="mobile-gallery-view" id="mobileGalleryView" aria-hidden="true">
+        <span class="mobile-grid-btn" id="mobileGridBtn"></span>
+        <div class="mobile-gallery-inner">
+            <img id="mobileGalleryImg" src="" alt="">
+        </div>
+        <div class="mobile-gallery-footer">
+            <button type="button" class="footer-info" id="mobileInfoBtn" aria-label="Open info">INFO</button>
+            <footer class="home-footer">
+                <span class="footer-edition">10ᵗʰ Anniversary Ed.</span>
+                <span class="footer-title">THE RICKSHAW RUN</span>
+                <span class="footer-copy">©2025</span>
+            </footer>
+        </div>
+    </div>
+
+    <div class="gallery-focus" id="galleryFocus" aria-hidden="true">
+        <button type="button" class="gallery-focus-close" id="galleryFocusClose" aria-label="Close">CLOSE</button>
+        <button type="button" class="gallery-focus-prev" id="galleryFocusPrev" aria-label="Previous image">
+            <img src="Design Resources/Forward:Backward.svg" alt="">
+        </button>
+        <button type="button" class="gallery-focus-next" id="galleryFocusNext" aria-label="Next image">
+            <img src="Design Resources/Forward:Backward.svg" alt="">
+        </button>
+        <div class="gallery-focus-inner">
+            <img id="galleryFocusImg" src="" alt="">
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
