@@ -23,7 +23,7 @@ const PRELOAD_HERO_IMAGES = [
 ];
 
 let velocityX = 0, velocityY = 0;
-let showingFragments = true, hasToggledThisMotion = false;
+let showingFragments = true;
 
 const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -66,7 +66,6 @@ function processMouseDistanceTrigger(clientX, clientY) {
         distanceSinceLastToggle += dx;
         if (distanceSinceLastToggle >= MOUSE_DISTANCE_THRESHOLD) {
             isMouseTriggerAnimating = true;
-            hasToggledThisMotion = false;
             distanceSinceLastToggle = 0;
             runDesktopHeroBlur();
         }
@@ -78,7 +77,6 @@ function processMouseDistanceTrigger(clientX, clientY) {
 function runDesktopHeroBlur() {
     const { rearview, fragments } = getActiveHeroPair();
     if (!rearview || !fragments) return;
-    hasToggledThisMotion = false;
     velocityX = 60;
     velocityY = 0;
     rearview.style.transition = 'none';
@@ -398,7 +396,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!rearview || !fragments) return;
             const tempShowing = showingFragments;
             showingFragments = false;
-            hasToggledThisMotion = false;
             velocityX = 60;
             velocityY = 0;
             rearview.style.transition = 'none';
@@ -461,22 +458,13 @@ document.addEventListener('DOMContentLoaded', function() {
             requestAnimationFrame(smearRampUp);
         }
 
-        function preloadAllImages(onProgress) {
+        function preloadAllImages() {
             const urls = [...PRELOAD_HERO_IMAGES];
-            let loaded = 0;
-            const total = urls.length;
-            if (total === 0) {
-                if (onProgress) onProgress(100);
-                return Promise.resolve();
-            }
+            if (urls.length === 0) return Promise.resolve();
             return Promise.all(urls.map(function(src) {
                 return new Promise(function(resolve) {
                     const img = new Image();
-                    img.onload = img.onerror = function() {
-                        loaded++;
-                        if (onProgress) onProgress(Math.round((loaded / total) * 100));
-                        resolve();
-                    };
+                    img.onload = img.onerror = resolve;
                     img.src = src;
                 });
             }));
@@ -573,15 +561,20 @@ document.addEventListener('DOMContentLoaded', function() {
                             mobileInfoBtn.addEventListener('click', openInfoOverlay);
                         }
                         let swipeStartX = 0;
-                        let mobileGalleryAnimating = false;
                         let lastNavTime = 0;
                         const NAV_COOLDOWN_MS = 350;
                         const mobileGalleryImgWrap = document.getElementById('mobileGalleryImgWrap');
+                        function isGalleryAnimating() {
+                            return mobileGalleryView.dataset && mobileGalleryView.dataset.galleryAnimating === '1';
+                        }
+                        function setGalleryAnimating(val) {
+                            if (mobileGalleryView.dataset) mobileGalleryView.dataset.galleryAnimating = val ? '1' : '0';
+                        }
                         function goToMobileImage(index) {
-                            if (mobileGalleryAnimating || !mobileGalleryImgWrap) return;
+                            if (isGalleryAnimating() || !mobileGalleryImgWrap) return;
                             const now = Date.now();
                             if (now - lastNavTime < NAV_COOLDOWN_MS) return;
-                            mobileGalleryAnimating = true;
+                            setGalleryAnimating(true);
                             lastNavTime = now;
                             const len = mobileGalleryOrder.length;
                             const idx = ((index % len) + len) % len;
@@ -604,7 +597,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     if (e2.propertyName !== 'transform') return;
                                     mobileGalleryImgWrap.removeEventListener('transitionend', onInEnd);
                                     mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap';
-                                    mobileGalleryAnimating = false;
+                                    setGalleryAnimating(false);
                                 }
                                 mobileGalleryImgWrap.addEventListener('transitionend', onInEnd);
                             }
@@ -638,7 +631,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 startImageCycle();
             }
         }
-        /* Mobile preload auto-triggers when image loading completes; touch/click disabled during preload */
     }
 
     if (preload && !mobile) {
@@ -691,13 +683,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const infoClose = document.getElementById('infoClose');
     function openInfoOverlay() {
         if (!infoOverlay) return;
+        document.body.classList.add('is-overlay-open');
         if (mobile) {
-            document.body.classList.add('is-overlay-open');
             const wrap = document.getElementById('mobileGalleryImgWrap');
             if (wrap) wrap.className = 'mobile-gallery-img-wrap';
+            const mgv = document.getElementById('mobileGalleryView');
+            if (mgv && mgv.dataset) mgv.dataset.galleryAnimating = '0';
             void document.body.offsetHeight;
-        } else {
-            document.body.classList.add('is-overlay-open');
         }
         document.documentElement.classList.add('no-scroll');
         document.body.classList.add('no-scroll');
