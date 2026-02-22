@@ -1,0 +1,1248 @@
+function afterNextFrame(cb) {
+    requestAnimationFrame(function() { requestAnimationFrame(cb); });
+}
+
+function onTransitionEnd(el, property, cb) {
+    el.addEventListener('transitionend', function handler(e) {
+        if (e.target !== el || e.propertyName !== property) return;
+        el.removeEventListener('transitionend', handler);
+        cb();
+    });
+}
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+const PRELOAD_HERO_IMAGES = [
+    'Grid Images/MVI_0113.00_00_02_29.Still001.jpg',
+    'Grid Images/MVI_0189.00_00_11_18.Still002.jpg',
+    'Grid Images/MVI_0288.00_00_13_13.Still001.jpg',
+    'Grid Images/MVI_0288.00_00_20_00.Still003.jpg',
+    'Grid Images/MVI_0451.00_01_13_14.Still001.jpg',
+    'Grid Images/MVI_0521.00_00_04_04.Still002.jpg',
+    'Grid Images/MVI_0886.00_00_20_16.Still002.jpg',
+    'Grid Images/MVI_0896.00_01_01_01.Still003.jpg',
+    'Grid Images/MVI_0912.00_00_02_02.Still001.jpg',
+    'Grid Images/MVI_0917.00_00_53_10.Still001.jpg',
+    'Grid Images/MVI_0952.00_00_07_04.Still001.jpg',
+    'Grid Images/MVI_1088.00_00_29_10.Still003.jpg',
+    'Grid Images/MVI_1495.00_00_20_09.Still006.jpg',
+    'Grid Images/MVI_1602.00_00_22_06.Still002.jpg'
+];
+
+let velocityX = 0, velocityY = 0;
+let showingFragments = true;
+
+const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+const MOUSE_DISTANCE_THRESHOLD = 250;
+const MOBILE_BLUR_HOLD_MS = 0;
+const MOBILE_BLUR_RAMP_UP_MS = 300;
+const MOBILE_BLUR_CROSSFADE_IN_MS = 1000;
+const MOBILE_BLUR_RAMP_DOWN_MS = 650;
+const DESKTOP_BLUR_HOLD_MS = 0;
+const DESKTOP_BLUR_PEAK = 110;
+const MOBILE_BLUR_PEAK = 80;
+const SMEAR_COLOR = '240, 109, 168';
+let lastMouseX = null, lastMouseY = null, distanceSinceLastToggle = 0;
+let isMouseTriggerAnimating = false;
+
+function getSmearShadow(intensity) {
+    if (intensity <= 0) return 'none';
+    const layers = [];
+    const steps = 50;
+    const maxOffset = 150;
+    for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const offset = t * maxOffset * intensity;
+        const opacity = Math.pow(1 - t, 2) * 0.1 * intensity;
+        layers.push(`${offset}px 0 0 rgba(${SMEAR_COLOR}, ${opacity.toFixed(3)})`);
+        layers.push(`${-offset}px 0 0 rgba(${SMEAR_COLOR}, ${opacity.toFixed(3)})`);
+    }
+    return layers.join(', ');
+}
+
+function processMouseDistanceTrigger(clientX, clientY) {
+    if (!isPreloadActive()) return;
+    if (isMouseTriggerAnimating) {
+        lastMouseX = clientX;
+        lastMouseY = clientY;
+        return;
+    }
+    if (lastMouseX !== null && lastMouseY !== null) {
+        const dx = Math.abs(clientX - lastMouseX);
+        distanceSinceLastToggle += dx;
+        if (distanceSinceLastToggle >= MOUSE_DISTANCE_THRESHOLD) {
+            isMouseTriggerAnimating = true;
+            distanceSinceLastToggle = 0;
+            runDesktopHeroBlur();
+        }
+    }
+    lastMouseX = clientX;
+    lastMouseY = clientY;
+}
+
+function runDesktopHeroBlur() {
+    const { rearview, fragments } = getActiveHeroPair();
+    if (!rearview || !fragments) return;
+    velocityX = 60;
+    velocityY = 0;
+    rearview.style.transition = 'none';
+    fragments.style.transition = 'none';
+
+    if (showingFragments) {
+        runDesktopBlurToRearview(rearview, fragments);
+    } else {
+        runDesktopBlurToFragments(rearview, fragments);
+    }
+}
+
+function runDesktopBlurToRearview(rearview, fragments) {
+    fragments.style.opacity = '1';
+    rearview.style.opacity = '0';
+    rearview.style.textShadow = 'none';
+    fragments.style.textShadow = 'none';
+    const peakIntensity = DESKTOP_BLUR_PEAK / 100;
+    const peakShadow = getSmearShadow(peakIntensity);
+    const rampUpStart = performance.now();
+    function smearRampUp(now) {
+        const elapsed = now - rampUpStart;
+        const t = Math.min(elapsed / MOBILE_BLUR_RAMP_UP_MS, 1);
+        const smearEased = Math.pow(t, 3);
+        const intensity = smearEased * peakIntensity;
+        fragments.style.textShadow = getSmearShadow(intensity);
+        if (t < 1) {
+            requestAnimationFrame(smearRampUp);
+            return;
+        }
+        const crossfadeStart = performance.now();
+        function crossfadeAtPeak(now) {
+            const elapsed = now - crossfadeStart;
+            const t = Math.min(elapsed / MOBILE_BLUR_CROSSFADE_IN_MS, 1);
+            const bump = 0.25 * Math.sin(Math.PI * t);
+            fragments.style.textShadow = peakShadow;
+            rearview.style.textShadow = peakShadow;
+            fragments.style.opacity = String(Math.min(1, Math.max(0, 1 - t + bump)));
+            rearview.style.opacity = String(Math.min(1, Math.max(0, t + bump)));
+            if (t < 1) {
+                requestAnimationFrame(crossfadeAtPeak);
+                return;
+            }
+            velocityX = velocityY = 0;
+            setTimeout(() => {
+                const rampDownStart = performance.now();
+                function smearRampDown(now) {
+                    const elapsed = now - rampDownStart;
+                    const progress = Math.min(elapsed / MOBILE_BLUR_RAMP_DOWN_MS, 1);
+                    const eased = 1 - Math.pow(1 - progress, 4);
+                    const intensity = (1 - eased) * peakIntensity;
+                    const shadow = getSmearShadow(intensity);
+                    rearview.style.textShadow = shadow;
+                    fragments.style.textShadow = shadow;
+                    if (progress < 1) {
+                        requestAnimationFrame(smearRampDown);
+                        return;
+                    }
+                    rearview.style.textShadow = 'none';
+                    fragments.style.textShadow = 'none';
+                    rearview.style.opacity = '1';
+                    showingFragments = false;
+                    isMouseTriggerAnimating = false;
+                }
+                requestAnimationFrame(smearRampDown);
+            }, DESKTOP_BLUR_HOLD_MS);
+        }
+        requestAnimationFrame(crossfadeAtPeak);
+    }
+    requestAnimationFrame(smearRampUp);
+}
+
+function runDesktopBlurToFragments(rearview, fragments) {
+    rearview.style.opacity = '1';
+    fragments.style.opacity = '0';
+    rearview.style.textShadow = 'none';
+    fragments.style.textShadow = 'none';
+    velocityX = velocityY = 0;
+    const peakIntensity = DESKTOP_BLUR_PEAK / 100;
+    const peakShadow = getSmearShadow(peakIntensity);
+    const rampUpStart = performance.now();
+    function smearRampUp(now) {
+        const elapsed = now - rampUpStart;
+        const t = Math.min(elapsed / MOBILE_BLUR_RAMP_UP_MS, 1);
+        const smearEased = Math.pow(t, 3);
+        const intensity = smearEased * peakIntensity;
+        rearview.style.textShadow = getSmearShadow(intensity);
+        if (t < 1) {
+            requestAnimationFrame(smearRampUp);
+            return;
+        }
+        const crossfadeStart = performance.now();
+        function crossfadeAtPeak(now) {
+            const elapsed = now - crossfadeStart;
+            const t = Math.min(elapsed / MOBILE_BLUR_CROSSFADE_IN_MS, 1);
+            const bump = 0.25 * Math.sin(Math.PI * t);
+            rearview.style.textShadow = peakShadow;
+            fragments.style.textShadow = peakShadow;
+            rearview.style.opacity = String(Math.min(1, Math.max(0, 1 - t + bump)));
+            fragments.style.opacity = String(Math.min(1, Math.max(0, t + bump)));
+            if (t < 1) {
+                requestAnimationFrame(crossfadeAtPeak);
+                return;
+            }
+            setTimeout(() => {
+                const rampDownStart = performance.now();
+                function smearRampDown(now) {
+                    const elapsed = now - rampDownStart;
+                    const progress = Math.min(elapsed / MOBILE_BLUR_RAMP_DOWN_MS, 1);
+                    const eased = 1 - Math.pow(1 - progress, 4);
+                    const intensity = (1 - eased) * peakIntensity;
+                    const shadow = getSmearShadow(intensity);
+                    rearview.style.textShadow = shadow;
+                    fragments.style.textShadow = shadow;
+                    if (progress < 1) {
+                        requestAnimationFrame(smearRampDown);
+                        return;
+                    }
+                    rearview.style.textShadow = 'none';
+                    fragments.style.textShadow = 'none';
+                    rearview.style.opacity = '0';
+                    fragments.style.opacity = '1';
+                    showingFragments = true;
+                    isMouseTriggerAnimating = false;
+                }
+                requestAnimationFrame(smearRampDown);
+            }, DESKTOP_BLUR_HOLD_MS);
+        }
+        requestAnimationFrame(crossfadeAtPeak);
+    }
+    requestAnimationFrame(smearRampUp);
+}
+
+function isPreloadActive() {
+    return !document.body.classList.contains('preload-dismissed');
+}
+
+function getActiveHeroPair() {
+    if (isPreloadActive()) {
+        return {
+            rearview: document.getElementById('preloadHeroRearview'),
+            fragments: document.getElementById('preloadHeroFragments')
+        };
+    }
+    return {
+        rearview: document.getElementById('homeHeroRearview'),
+        fragments: document.getElementById('homeHeroFragments')
+    };
+}
+
+const PRELOAD_BG_FOLLOW_STRENGTH = 14;
+const PRELOAD_BG_SCALE = 1.12;
+const PRELOAD_BG_LERP = 0.18;
+let preloadBgTargetX = 0, preloadBgTargetY = 0;
+let preloadBgCurrentX = 0, preloadBgCurrentY = 0;
+let preloadBgRafId = null;
+
+function setPreloadBgTarget(clientX, clientY) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const relX = (clientX - w / 2) / (w / 2);
+    const relY = (clientY - h / 2) / (h / 2);
+    preloadBgTargetX = relX * PRELOAD_BG_FOLLOW_STRENGTH;
+    preloadBgTargetY = relY * PRELOAD_BG_FOLLOW_STRENGTH;
+}
+
+function preloadBgTick() {
+    if (!isPreloadActive()) {
+        preloadBgRafId = null;
+        return;
+    }
+    const preloadBgImg = document.getElementById('preloadBgImg');
+    if (!preloadBgImg) {
+        preloadBgRafId = null;
+        return;
+    }
+    preloadBgCurrentX += (preloadBgTargetX - preloadBgCurrentX) * PRELOAD_BG_LERP;
+    preloadBgCurrentY += (preloadBgTargetY - preloadBgCurrentY) * PRELOAD_BG_LERP;
+    preloadBgImg.style.transform = `scale(${PRELOAD_BG_SCALE}) translate(${preloadBgCurrentX}px, ${preloadBgCurrentY}px) translateZ(0)`;
+    preloadBgRafId = requestAnimationFrame(preloadBgTick);
+}
+
+function updatePreloadBgFollow(clientX, clientY) {
+    setPreloadBgTarget(clientX, clientY);
+    if (!preloadBgRafId && isPreloadActive()) {
+        preloadBgRafId = requestAnimationFrame(preloadBgTick);
+    }
+}
+
+function resetPreloadBgFollow() {
+    preloadBgTargetX = preloadBgTargetY = 0;
+    if (!isPreloadActive()) {
+        preloadBgCurrentX = preloadBgCurrentY = 0;
+        const preloadBgImg = document.getElementById('preloadBgImg');
+        if (preloadBgImg) preloadBgImg.style.transform = `scale(${PRELOAD_BG_SCALE}) translate(0, 0) translateZ(0)`;
+    } else if (!preloadBgRafId) {
+        preloadBgRafId = requestAnimationFrame(preloadBgTick);
+    }
+}
+
+function handleMouseMove(e) {
+    updatePreloadBgFollow(e.clientX, e.clientY);
+    processMouseDistanceTrigger(e.clientX, e.clientY);
+}
+
+function handleTouchMove(e) {
+    if (e.touches.length === 1) {
+        const t = e.touches[0];
+        updatePreloadBgFollow(t.clientX, t.clientY);
+        processMouseDistanceTrigger(t.clientX, t.clientY);
+    }
+}
+
+function handleTouchEnd(e) {
+    if (e.touches && e.touches.length === 0) resetPreloadBgFollow();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const mobile = isMobile();
+    if (mobile) {
+        document.body.classList.add('is-mobile');
+        document.documentElement.classList.add('is-mobile');
+    }
+
+    const customCursor = document.getElementById('customCursor');
+    if (customCursor) {
+        document.addEventListener('mousemove', function(e) {
+            customCursor.classList.add('is-visible');
+            customCursor.style.left = e.clientX + 'px';
+            customCursor.style.top = e.clientY + 'px';
+        });
+    }
+
+    const preloadBgImg = document.getElementById('preloadBgImg');
+    const preloadCycleImages = (function() {
+        const arr = [...PRELOAD_HERO_IMAGES];
+        shuffleArray(arr);
+        return arr.slice(0, 6);
+    })();
+
+    function loadRandomPreloadImage() {
+        if (!preloadBgImg || !preloadCycleImages.length) return;
+        preloadBgImg.src = preloadCycleImages[0];
+    }
+
+    function runPreloadBgZoomOut() {
+        if (!preloadBgImg || typeof gsap === 'undefined') return;
+        gsap.fromTo(preloadBgImg, { scale: 1.2 }, {
+            scale: 1.12,
+            duration: 0.6,
+            ease: 'power2.out'
+        });
+    }
+
+    let preloadInClickCycle = false;
+    if (!mobile) {
+        if (preloadBgImg) {
+            preloadBgImg.addEventListener('load', function() {
+                if (!preloadInClickCycle) runPreloadBgZoomOut();
+            });
+        }
+        loadRandomPreloadImage();
+        if (preloadBgImg && preloadBgImg.complete && preloadBgImg.src) runPreloadBgZoomOut();
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('touchmove', handleTouchMove, { passive: true });
+        document.addEventListener('touchend', handleTouchEnd);
+        document.addEventListener('mouseleave', resetPreloadBgFollow);
+        document.addEventListener('mouseout', function(e) {
+            if (!e.relatedTarget || !document.contains(e.relatedTarget)) resetPreloadBgFollow();
+        });
+    }
+
+    const mainPage = document.getElementById('mainPage');
+    const preload = document.getElementById('preload');
+    const mainFooter = document.querySelector('.main-page .footer-area');
+
+    if (mobile) {
+        const mobilePreload = document.getElementById('mobilePreload');
+        const mobileShutterAudio = new Audio('Audio/Mixdown/Shutter 5x_Mixdown_01.mp3');
+        mobileShutterAudio.preload = 'auto';
+        mobileShutterAudio.load();
+        const mobileGalleryOrder = (function() {
+            const arr = [...PRELOAD_HERO_IMAGES];
+            shuffleArray(arr);
+            return arr;
+        })();
+        const mobilePreloadCycleImages = mobileGalleryOrder.slice(0, 5);
+        const mobilePreloadHero = mobilePreload?.querySelector('.mobile-preload-hero');
+
+        if (mobilePreloadHero) {
+            afterNextFrame(function() { mobilePreloadHero.classList.add('mobile-preload-fragments-visible'); });
+        }
+
+        function unlockMobileAudio() {
+            mobileShutterAudio.play().then(function() {
+                mobileShutterAudio.pause();
+                mobileShutterAudio.currentTime = 0;
+            }).catch(function() {});
+        }
+        if (mobilePreload) {
+            const unlockOnce = () => {
+                unlockMobileAudio();
+                mobilePreload.removeEventListener('touchstart', unlockOnce);
+                mobilePreload.removeEventListener('click', unlockOnce);
+            };
+            mobilePreload.addEventListener('touchstart', unlockOnce, { passive: true, once: true });
+            mobilePreload.addEventListener('click', unlockOnce, { once: true });
+        }
+
+        function runMobileAutoHeroBlur(onComplete) {
+            const rearview = document.getElementById('mobilePreloadHeroRearview');
+            const fragments = document.getElementById('mobilePreloadHeroFragments');
+            if (!rearview || !fragments) return;
+            const tempShowing = showingFragments;
+            showingFragments = false;
+            velocityX = 60;
+            velocityY = 0;
+            rearview.style.transition = 'none';
+            fragments.style.transition = 'none';
+            rearview.style.textShadow = 'none';
+            fragments.style.textShadow = 'none';
+            rearview.style.opacity = '0';
+            const peakIntensity = MOBILE_BLUR_PEAK / 100;
+            const peakShadow = getSmearShadow(peakIntensity);
+            const rampUpStart = performance.now();
+            function smearRampUp(now) {
+                const elapsed = now - rampUpStart;
+                const t = Math.min(elapsed / MOBILE_BLUR_RAMP_UP_MS, 1);
+                const smearEased = Math.pow(t, 3);
+                const intensity = smearEased * peakIntensity;
+                fragments.style.textShadow = getSmearShadow(intensity);
+                if (t < 1) {
+                    requestAnimationFrame(smearRampUp);
+                    return;
+                }
+                const crossfadeStart = performance.now();
+                function crossfadeAtPeak(now) {
+                    const elapsed = now - crossfadeStart;
+                    const t = Math.min(elapsed / MOBILE_BLUR_CROSSFADE_IN_MS, 1);
+                    const bump = 0.25 * Math.sin(Math.PI * t);
+                    fragments.style.textShadow = peakShadow;
+                    rearview.style.textShadow = peakShadow;
+                    fragments.style.opacity = String(Math.min(1, Math.max(0, 1 - t + bump)));
+                    rearview.style.opacity = String(Math.min(1, Math.max(0, t + bump)));
+                    if (t < 1) {
+                        requestAnimationFrame(crossfadeAtPeak);
+                        return;
+                    }
+                    velocityX = velocityY = 0;
+                    setTimeout(() => {
+                        const rampDownStart = performance.now();
+                        function smearRampDown(now) {
+                            const elapsed = now - rampDownStart;
+                            const progress = Math.min(elapsed / MOBILE_BLUR_RAMP_DOWN_MS, 1);
+                            const eased = 1 - Math.pow(1 - progress, 4);
+                            const intensity = (1 - eased) * peakIntensity;
+                            const shadow = getSmearShadow(intensity);
+                            rearview.style.textShadow = shadow;
+                            fragments.style.textShadow = shadow;
+                            if (progress < 1) {
+                                requestAnimationFrame(smearRampDown);
+                                return;
+                            }
+                            rearview.style.textShadow = 'none';
+                            fragments.style.textShadow = 'none';
+                            rearview.style.opacity = '1';
+                            showingFragments = tempShowing;
+                            if (typeof onComplete === 'function') onComplete();
+                        }
+                        requestAnimationFrame(smearRampDown);
+                    }, MOBILE_BLUR_HOLD_MS);
+                }
+                requestAnimationFrame(crossfadeAtPeak);
+            }
+            requestAnimationFrame(smearRampUp);
+        }
+
+        function preloadAllImages() {
+            const urls = [...PRELOAD_HERO_IMAGES];
+            if (urls.length === 0) return Promise.resolve();
+            return Promise.all(urls.map(function(src) {
+                return new Promise(function(resolve) {
+                    const img = new Image();
+                    img.onload = img.onerror = resolve;
+                    img.src = src;
+                });
+            }));
+        }
+
+        const MOBILE_COUNTER_DURATION = 3;
+        function runMobilePreloadPhase2() {
+            const rearview = document.getElementById('mobilePreloadHeroRearview');
+            const fragments = document.getElementById('mobilePreloadHeroFragments');
+            const counterEl = document.getElementById('mobilePreloadCounter');
+            if (!counterEl || !mobilePreloadHero) return;
+            if (rearview) {
+                rearview.style.removeProperty('opacity');
+                rearview.style.removeProperty('transition');
+            }
+            if (fragments) {
+                fragments.style.removeProperty('opacity');
+                fragments.style.removeProperty('transition');
+            }
+            mobilePreloadHero.classList.add('mobile-preload-phase2');
+            setCounterDisplay(counterEl, 0);
+            function setCounterDisplay(el, val) {
+                if (val === 100) {
+                    el.innerHTML = '<span class="counter-one">1</span>00';
+                } else {
+                    el.textContent = val;
+                }
+            }
+            const counterObj = { value: 0 };
+            const counterTween = gsap.to(counterObj, {
+                value: 100,
+                duration: MOBILE_COUNTER_DURATION,
+                delay: 0.4,
+                ease: 'power2.out',
+                onUpdate: function() {
+                    setCounterDisplay(counterEl, Math.round(counterObj.value));
+                }
+            });
+            Promise.all([
+                preloadAllImages(),
+                counterTween.then()
+            ]).then(function() {
+                setCounterDisplay(counterEl, 100);
+                setTimeout(runMobilePreloadDismiss, 200);
+            });
+        }
+
+        setTimeout(function() {
+            runMobileAutoHeroBlur(runMobilePreloadPhase2);
+        }, 1500);
+
+        const MOBILE_CYCLE_TEXTS = [
+            '17 DAYS · 4000KM',
+            '25.5788° N, 91.8933° E',
+            '9.9312° N, 76.2673° E'
+        ];
+        const MOBILE_CYCLE_INTERVAL_MS = 5000;
+        let mobileFocusIndex = 0;
+        let mobilePreloadHandled = false;
+        function runMobilePreloadDismiss() {
+            if (mobilePreloadHandled) return;
+            mobilePreloadHandled = true;
+            function startImageCycle() {
+                const cycleMs = 150;
+                const flashCount = 5;
+                const mobileGalleryView = document.getElementById('mobileGalleryView');
+                const mobileGalleryImg = document.getElementById('mobileGalleryImg');
+                const mobileGridBtn = document.getElementById('mobileGridBtn');
+                document.body.classList.add('mobile-preload-dismissed');
+                if (mobilePreload) mobilePreload.classList.add('mobile-preload-faded');
+                if (mobileGalleryView) mobileGalleryView.classList.add('is-visible');
+                let cycleTextIndex = 0;
+                function setCycleText() {
+                    if (mobileGridBtn && MOBILE_CYCLE_TEXTS.length) {
+                        mobileGridBtn.textContent = MOBILE_CYCLE_TEXTS[cycleTextIndex];
+                        cycleTextIndex = (cycleTextIndex + 1) % MOBILE_CYCLE_TEXTS.length;
+                    }
+                }
+                function updateCycleText() {
+                    if (!mobileGridBtn || !MOBILE_CYCLE_TEXTS.length) return;
+                    const mgv = document.getElementById('mobileGalleryView');
+                    const isGalleryVisible = mgv && getComputedStyle(mgv).display !== 'none';
+                    if (!isGalleryVisible) {
+                        mobileGridBtn.classList.remove('mobile-grid-btn-cycling-fade');
+                        setCycleText();
+                        return;
+                    }
+                    mobileGridBtn.classList.add('mobile-grid-btn-cycling-fade');
+                    onTransitionEnd(mobileGridBtn, 'opacity', function() {
+                        setCycleText();
+                        mobileGridBtn.classList.remove('mobile-grid-btn-cycling-fade');
+                    });
+                }
+                if (mobileGalleryImg) {
+                    mobileGalleryImg.src = mobilePreloadCycleImages[0];
+                }
+                const mobileInfoBtn = document.getElementById('mobileInfoBtn');
+                let step = 1;
+                const flashInterval = setInterval(function() {
+                    if (mobileGalleryImg) {
+                        mobileGalleryImg.src = mobilePreloadCycleImages[step];
+                    }
+                    step++;
+                    if (step >= flashCount) {
+                        clearInterval(flashInterval);
+                        mobileFocusIndex = 4;
+                        setTimeout(function() {
+                        mobileGalleryView.classList.add('mobile-gallery-ready');
+                        setCycleText();
+                        setInterval(updateCycleText, MOBILE_CYCLE_INTERVAL_MS);
+                        if (mobileInfoBtn && infoOverlay) {
+                            mobileInfoBtn.addEventListener('click', openInfoOverlay);
+                        }
+                        let swipeStartX = 0;
+                        let lastNavTime = 0;
+                        const NAV_COOLDOWN_MS = 350;
+                        const mobileGalleryImgWrap = document.getElementById('mobileGalleryImgWrap');
+                        function isGalleryAnimating() {
+                            return mobileGalleryView.dataset && mobileGalleryView.dataset.galleryAnimating === '1';
+                        }
+                        function setGalleryAnimating(val) {
+                            if (mobileGalleryView.dataset) mobileGalleryView.dataset.galleryAnimating = val ? '1' : '0';
+                        }
+                        function goToMobileImage(index) {
+                            if (isGalleryAnimating() || !mobileGalleryImgWrap) return;
+                            const now = Date.now();
+                            if (now - lastNavTime < NAV_COOLDOWN_MS) return;
+                            setGalleryAnimating(true);
+                            lastNavTime = now;
+                            const len = mobileGalleryOrder.length;
+                            const idx = ((index % len) + len) % len;
+                            const newSrc = mobileGalleryOrder[idx];
+                            const dir = index > mobileFocusIndex ? 1 : -1;
+                            mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap mobile-gallery-slide-out-' + (dir === 1 ? 'left' : 'right');
+                            function onOutEnd(e) {
+                                if (e.propertyName !== 'transform') return;
+                                mobileGalleryImgWrap.removeEventListener('transitionend', onOutEnd);
+                                mobileFocusIndex = idx;
+                                mobileGalleryImg.src = newSrc;
+                                mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap mobile-gallery-slide-in-from-' + (dir === 1 ? 'right' : 'left') + ' mobile-gallery-slide-no-transition';
+                                void mobileGalleryImgWrap.offsetHeight;
+                                requestAnimationFrame(function() {
+                                    mobileGalleryImgWrap.classList.remove('mobile-gallery-slide-no-transition');
+                                    mobileGalleryImgWrap.classList.add('mobile-gallery-slide-active');
+                                });
+                                function onInEnd(e2) {
+                                    if (e2.propertyName !== 'transform') return;
+                                    mobileGalleryImgWrap.removeEventListener('transitionend', onInEnd);
+                                    mobileGalleryImgWrap.className = 'mobile-gallery-img-wrap';
+                                    setGalleryAnimating(false);
+                                }
+                                mobileGalleryImgWrap.addEventListener('transitionend', onInEnd);
+                            }
+                            mobileGalleryImgWrap.addEventListener('transitionend', onOutEnd);
+                        }
+                        mobileGalleryView.addEventListener('touchstart', (e) => {
+                            if (e.touches.length === 1) swipeStartX = e.touches[0].pageX;
+                        }, { passive: true });
+                        mobileGalleryView.addEventListener('touchend', (e) => {
+                            if (!e.changedTouches?.length || !mobileGalleryView.classList.contains('is-visible')) return;
+                            const dx = e.changedTouches[0].pageX - swipeStartX;
+                            if (Math.abs(dx) > 50) {
+                                if (dx < 0) goToMobileImage(mobileFocusIndex + 1);
+                                else goToMobileImage(mobileFocusIndex - 1);
+                            } else {
+                                const tapTarget = e.target;
+                                if (tapTarget.closest('.mobile-grid-btn') || tapTarget.closest('.mobile-gallery-footer')) return;
+                                const tapX = e.changedTouches[0].pageX;
+                                const w = window.innerWidth;
+                                if (tapX < w * 0.25) goToMobileImage(mobileFocusIndex - 1);
+                                else if (tapX > w * 0.75) goToMobileImage(mobileFocusIndex + 1);
+                            }
+                        }, { passive: true });
+                        }, 300);
+                    }
+                }, cycleMs);
+            }
+            if (mobilePreloadHero) {
+                mobilePreloadHero.classList.add('mobile-preload-hero-fade-out');
+                onTransitionEnd(mobilePreloadHero, 'opacity', startImageCycle);
+            } else {
+                startImageCycle();
+            }
+        }
+    }
+
+    if (preload && !mobile) {
+        let preloadClickHandled = false;
+        preload.addEventListener('click', function() {
+            if (preloadClickHandled) return;
+            preloadClickHandled = true;
+            preloadInClickCycle = true;
+
+            const cycleMs = 150;
+            const flashCount = 5;
+
+            const audio = new Audio('Audio/Mixdown/Shutter 5x_Mixdown_01.mp3');
+            audio.play().catch(function() {});
+
+            const cycleImages = preloadCycleImages.slice(1, 6);
+            let step = 0;
+            const flashInterval = setInterval(function() {
+                if (preloadBgImg) preloadBgImg.src = cycleImages[step];
+                step++;
+                if (step >= flashCount) {
+                    clearInterval(flashInterval);
+                    setTimeout(runPreloadDismiss, 300);
+                }
+            }, cycleMs);
+        });
+    }
+
+    function runPreloadDismiss() {
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
+        document.body.classList.add('preload-dismissed');
+        setTimeout(function() { preload.classList.add('preload-faded'); }, 200);
+        if (mainPage) mainPage.classList.add('has-entered');
+        if (mainFooter) {
+            onTransitionEnd(mainFooter, 'opacity', function() {
+                document.documentElement.classList.remove('no-scroll');
+                document.body.classList.remove('no-scroll');
+            });
+        } else {
+            setTimeout(function() {
+                document.documentElement.classList.remove('no-scroll');
+                document.body.classList.remove('no-scroll');
+            }, 800);
+        }
+    }
+
+    const infoBtn = document.getElementById('infoBtn');
+    const infoOverlay = document.getElementById('infoOverlay');
+    const infoClose = document.getElementById('infoClose');
+    function openInfoOverlay() {
+        if (!infoOverlay) return;
+        document.body.classList.add('is-overlay-open');
+        if (mobile) {
+            const wrap = document.getElementById('mobileGalleryImgWrap');
+            if (wrap) wrap.className = 'mobile-gallery-img-wrap';
+            const mgv = document.getElementById('mobileGalleryView');
+            if (mgv && mgv.dataset) mgv.dataset.galleryAnimating = '0';
+            void document.body.offsetHeight;
+        }
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
+        infoOverlay.classList.add('is-open');
+        infoOverlay.setAttribute('aria-hidden', 'false');
+        infoOverlay.classList.remove('is-closing');
+        afterNextFrame(function() { infoOverlay.classList.add('is-visible'); });
+    }
+
+    function closeInfoOverlay() {
+        if (!infoOverlay) return;
+        infoOverlay.classList.remove('is-visible');
+        infoOverlay.classList.add('is-closing');
+        onTransitionEnd(infoOverlay, 'opacity', function() {
+            infoOverlay.classList.remove('is-open', 'is-closing');
+            infoOverlay.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('is-overlay-open');
+            if (mobile) {
+                const btn = document.getElementById('mobileGridBtn');
+                if (btn) btn.classList.remove('mobile-grid-btn-cycling-fade');
+            }
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
+        });
+    }
+
+    if (infoBtn && infoOverlay) {
+        infoBtn.addEventListener('click', openInfoOverlay);
+    }
+    if (infoClose && infoOverlay) {
+        infoClose.addEventListener('click', closeInfoOverlay);
+    }
+
+    const SITE_AUDIO_SRC = 'Audio/Ambient/India-BaseLoop_mixdown.mp3';
+    const SITE_AUDIO_FADE_MS = 1500;
+    const SITE_AUDIO_CROSSFADE_MS = 2500;
+
+    const infoAudioBtn = document.getElementById('infoAudioBtn');
+    if (infoAudioBtn) {
+        let siteAudioCtx = null;
+        let siteAudioGainA = null;
+        let siteAudioGainB = null;
+        let siteAudioElA = null;
+        let siteAudioElB = null;
+        let siteAudioLoopCheck = null;
+        let siteAudioActive = false;
+        let siteAudioCurrent = 'A';
+
+        function getSiteAudioCtx() {
+            if (!siteAudioCtx) {
+                siteAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return siteAudioCtx;
+        }
+
+        function initSiteAudioElements() {
+            if (siteAudioElA && siteAudioElB) return;
+            siteAudioElA = new Audio(SITE_AUDIO_SRC);
+            siteAudioElB = new Audio(SITE_AUDIO_SRC);
+            siteAudioElA.preload = 'auto';
+            siteAudioElB.preload = 'auto';
+            const ctx = getSiteAudioCtx();
+            const srcA = ctx.createMediaElementSource(siteAudioElA);
+            const srcB = ctx.createMediaElementSource(siteAudioElB);
+            siteAudioGainA = ctx.createGain();
+            siteAudioGainB = ctx.createGain();
+            srcA.connect(siteAudioGainA);
+            srcB.connect(siteAudioGainB);
+            siteAudioGainA.connect(ctx.destination);
+            siteAudioGainB.connect(ctx.destination);
+            siteAudioGainA.gain.value = 0;
+            siteAudioGainB.gain.value = 0;
+        }
+
+        function siteAudioFadeIn(gainNode, durationMs, onComplete) {
+            const ctx = gainNode.context;
+            const now = ctx.currentTime;
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(1, now + durationMs / 1000);
+            if (onComplete) setTimeout(onComplete, durationMs);
+        }
+
+        function siteAudioFadeOut(gainNode, durationMs, onComplete) {
+            const ctx = gainNode.context;
+            const now = ctx.currentTime;
+            gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+            gainNode.gain.linearRampToValueAtTime(0, now + durationMs / 1000);
+            if (onComplete) setTimeout(onComplete, durationMs);
+        }
+
+        function siteAudioCrossfade(fromGain, toGain, fromEl, toEl, durationMs) {
+            const ctx = fromGain.context;
+            const now = ctx.currentTime;
+            const sec = durationMs / 1000;
+            fromGain.gain.setValueAtTime(fromGain.gain.value, now);
+            fromGain.gain.linearRampToValueAtTime(0, now + sec);
+            toGain.gain.setValueAtTime(0, now);
+            toGain.gain.linearRampToValueAtTime(1, now + sec);
+            toEl.currentTime = 0;
+            toEl.play().catch(function() {});
+        }
+
+        function checkSiteAudioLoop() {
+            if (!siteAudioActive || !siteAudioElA || !siteAudioElB) return;
+            const el = siteAudioCurrent === 'A' ? siteAudioElA : siteAudioElB;
+            const duration = el.duration;
+            if (!isFinite(duration) || duration <= 0) return;
+            const crossfadeSec = SITE_AUDIO_CROSSFADE_MS / 1000;
+            if (el.currentTime >= duration - crossfadeSec) {
+                if (siteAudioLoopCheck) clearInterval(siteAudioLoopCheck);
+                siteAudioLoopCheck = null;
+                if (siteAudioCurrent === 'A') {
+                    siteAudioCrossfade(siteAudioGainA, siteAudioGainB, siteAudioElA, siteAudioElB, SITE_AUDIO_CROSSFADE_MS);
+                    siteAudioElA.addEventListener('ended', function() {
+                        siteAudioElA.pause();
+                        siteAudioElA.currentTime = 0;
+                    }, { once: true });
+                    siteAudioCurrent = 'B';
+                } else {
+                    siteAudioCrossfade(siteAudioGainB, siteAudioGainA, siteAudioElB, siteAudioElA, SITE_AUDIO_CROSSFADE_MS);
+                    siteAudioElB.addEventListener('ended', function() {
+                        siteAudioElB.pause();
+                        siteAudioElB.currentTime = 0;
+                    }, { once: true });
+                    siteAudioCurrent = 'A';
+                }
+                siteAudioLoopCheck = setInterval(checkSiteAudioLoop, 100);
+            }
+        }
+
+        function startSiteAudio() {
+            initSiteAudioElements();
+            const ctx = getSiteAudioCtx();
+            if (ctx.state === 'suspended') ctx.resume();
+            siteAudioActive = true;
+            siteAudioCurrent = 'A';
+            siteAudioGainB.gain.value = 0;
+            siteAudioElA.currentTime = 0;
+            siteAudioElA.play().catch(function() {});
+            siteAudioFadeIn(siteAudioGainA, SITE_AUDIO_FADE_MS);
+            siteAudioLoopCheck = setInterval(checkSiteAudioLoop, 100);
+        }
+
+        function stopSiteAudio() {
+            siteAudioActive = false;
+            if (siteAudioLoopCheck) {
+                clearInterval(siteAudioLoopCheck);
+                siteAudioLoopCheck = null;
+            }
+            const gainNode = siteAudioCurrent === 'A' ? siteAudioGainA : siteAudioGainB;
+            const el = siteAudioCurrent === 'A' ? siteAudioElA : siteAudioElB;
+            siteAudioFadeOut(gainNode, SITE_AUDIO_FADE_MS, function() {
+                el.pause();
+                el.currentTime = 0;
+                siteAudioGainA.gain.value = 0;
+                siteAudioGainB.gain.value = 0;
+            });
+        }
+
+        infoAudioBtn.addEventListener('click', function() {
+            const isOn = this.textContent.includes('On');
+            if (isOn) {
+                stopSiteAudio();
+                this.textContent = 'Site Audio: Off';
+            } else {
+                startSiteAudio();
+                this.textContent = 'Site Audio: On';
+            }
+        });
+    }
+
+    const gallerySection = document.getElementById('gallerySection');
+    const galleryTrack = document.getElementById('galleryTrack');
+    const galleryOrder = [...PRELOAD_HERO_IMAGES];
+    if (!mobile && gallerySection && galleryTrack && PRELOAD_HERO_IMAGES.length) {
+        shuffleArray(galleryOrder);
+        const REPEATS = 3;
+        let html = '';
+        for (let r = 0; r < REPEATS; r++) {
+            for (let i = 0; i < galleryOrder.length; i++) {
+                html += `<div class="gallery-img-wrap"><img class="gallery-img" src="${galleryOrder[i]}" alt="" loading="lazy" draggable="false"></div>`;
+            }
+        }
+        galleryTrack.innerHTML = html;
+
+        const wraps = galleryTrack.querySelectorAll('.gallery-img-wrap');
+        gsap.set(wraps, { opacity: 0, y: 20 });
+
+        function runGalleryEntranceAnimation(wraps, section, delay = 0.06) {
+            const viewCenter = section ? section.scrollLeft + section.clientWidth / 2 : 0;
+            const STAGGER_PER_PX = 0.028 / 250;
+            gsap.from(wraps, {
+                opacity: 0,
+                y: 20,
+                duration: 0.65,
+                ease: 'power3.out',
+                stagger: (i) => {
+                    const w = wraps[i];
+                    const wrapCenter = w.offsetLeft + w.offsetWidth / 2;
+                    return Math.abs(wrapCenter - viewCenter) * STAGGER_PER_PX;
+                },
+                delay
+            });
+        }
+
+        let dragging = false, startX, startScrollLeft, hasDragged = false;
+        let lastScrollLeft = 0, lastMoveTime = 0;
+        let velocitySamples = [];
+        const THROW_MULTIPLIER = 75;
+        const THROW_MAX = 1000;
+        const THROW_DURATION_MIN = 0.35;
+        const THROW_DURATION_MAX = 1.4;
+        const THROW_DURATION_PER_PX = 1 / 350;
+        let throwTarget = null;
+
+        function tryOpenGalleryFocus(targetEl) {
+            const wrap = targetEl?.closest?.('.gallery-img-wrap');
+            const img = wrap?.querySelector('.gallery-img') || targetEl?.closest?.('.gallery-img');
+            if (img?.src && wrap) openGalleryFocus(img.src, wrap);
+        }
+
+        function applyThrow() {
+            if (velocitySamples.length === 0) return;
+            const peak = velocitySamples.reduce((a, b) => Math.abs(a) >= Math.abs(b) ? a : b);
+            if (Math.abs(peak) < 0.3) return;
+            const distance = Math.sign(peak) * Math.min(Math.abs(peak) * THROW_MULTIPLIER, THROW_MAX);
+            const target = gallerySection.scrollLeft + distance;
+            const duration = Math.max(THROW_DURATION_MIN, Math.min(THROW_DURATION_MAX, Math.abs(distance) * THROW_DURATION_PER_PX));
+            throwTarget = target;
+            gsap.to(gallerySection, {
+                scrollLeft: target,
+                duration,
+                ease: 'expo.out',
+                overwrite: true,
+                onComplete: () => { throwTarget = null; },
+                onKill: () => { throwTarget = null; }
+            });
+        }
+
+        gallerySection.addEventListener('mousedown', (e) => {
+            dragging = true;
+            hasDragged = false;
+            startX = e.pageX;
+            startScrollLeft = gallerySection.scrollLeft;
+            lastScrollLeft = startScrollLeft;
+            lastMoveTime = performance.now();
+            velocitySamples = [];
+            gsap.killTweensOf(gallerySection);
+        });
+        gallerySection.addEventListener('mouseleave', () => { dragging = false; });
+        gallerySection.addEventListener('mouseup', (e) => {
+            if (!hasDragged && (e.target.closest('.gallery-img') || e.target.closest('.gallery-img-wrap')))
+                tryOpenGalleryFocus(e.target);
+            if (hasDragged) applyThrow();
+            dragging = false;
+        });
+        gallerySection.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            hasDragged = true;
+            e.preventDefault();
+            gallerySection.scrollLeft = startScrollLeft - (e.pageX - startX);
+            const t = performance.now();
+            const dt = t - lastMoveTime;
+            if (dt > 0) {
+                const v = (gallerySection.scrollLeft - lastScrollLeft) / dt;
+                velocitySamples.push(v);
+                if (velocitySamples.length > 8) velocitySamples.shift();
+            }
+            lastScrollLeft = gallerySection.scrollLeft;
+            lastMoveTime = t;
+        });
+        gallerySection.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                dragging = true;
+                hasDragged = false;
+                startX = e.touches[0].pageX;
+                startScrollLeft = gallerySection.scrollLeft;
+                lastScrollLeft = startScrollLeft;
+                lastMoveTime = performance.now();
+                velocitySamples = [];
+                gsap.killTweensOf(gallerySection);
+            }
+        }, { passive: true });
+        gallerySection.addEventListener('touchmove', (e) => {
+            if (!dragging || e.touches.length !== 1) return;
+            hasDragged = true;
+            e.preventDefault();
+            gallerySection.scrollLeft = startScrollLeft - (e.touches[0].pageX - startX);
+            const t = performance.now();
+            const dt = t - lastMoveTime;
+            if (dt > 0) {
+                const v = (gallerySection.scrollLeft - lastScrollLeft) / dt;
+                velocitySamples.push(v);
+                if (velocitySamples.length > 8) velocitySamples.shift();
+            }
+            lastScrollLeft = gallerySection.scrollLeft;
+            lastMoveTime = t;
+        }, { passive: false });
+        gallerySection.addEventListener('touchend', (e) => {
+            if (!hasDragged && e.changedTouches?.length && (e.target.closest('.gallery-img') || e.target.closest('.gallery-img-wrap')))
+                tryOpenGalleryFocus(e.target);
+            if (hasDragged) applyThrow();
+            dragging = false;
+        });
+
+        document.addEventListener('wheel', function galleryWheel(e) {
+            if (isPreloadActive()) return;
+            let dx = e.deltaX || 0, dy = e.deltaY || 0;
+            if (e.deltaMode === 1) { dx *= 33; dy *= 33; }
+            if (e.deltaMode === 2) { dx *= 100; dy *= 100; }
+            if (dx !== 0 || dy !== 0) {
+                gallerySection.scrollLeft += dx + dy;
+                e.preventDefault();
+            }
+        }, { passive: false, capture: true });
+
+        function initInfiniteScroll() {
+            const firstWrap = galleryTrack.querySelector('.gallery-img-wrap');
+            const cw = gallerySection.clientWidth;
+            if (!firstWrap || firstWrap.offsetWidth === 0 || cw < 100) {
+                requestAnimationFrame(initInfiniteScroll);
+                return;
+            }
+            const cycleWidth = galleryOrder.length * (firstWrap.offsetWidth + 6);
+            const pad = Math.max(0, (cw - cycleWidth) / 2);
+            galleryTrack.style.paddingLeft = galleryTrack.style.paddingRight = pad + 'px';
+            const targetScroll = Math.max(0, pad + cycleWidth - cw / 2);
+            gallerySection.scrollLeft = targetScroll;
+            requestAnimationFrame(function() {
+                requestAnimationFrame(function() {
+                    gallerySection.scrollLeft = targetScroll;
+                    gsap.set(wraps, { opacity: 1, y: 0 });
+                    runGalleryEntranceAnimation(wraps, gallerySection, 0.25);
+                });
+            });
+
+            const BUFFER = 100;
+
+            function wrap(dir) {
+                const s = gallerySection.scrollLeft;
+                const jump = dir === 1 ? cycleWidth : -cycleWidth;
+                const tweens = gsap.getTweensOf(gallerySection);
+                if (tweens.length && throwTarget != null) {
+                    const tween = tweens[0];
+                    const newTarget = throwTarget + jump;
+                    const remain = (1 - tween.progress()) * (tween.duration() || 1);
+                    tween.kill();
+                    throwTarget = newTarget;
+                    gallerySection.scrollLeft = s + jump;
+                    if (remain > 0.03) gsap.to(gallerySection, {
+                        scrollLeft: newTarget, duration: remain, ease: 'expo.out', overwrite: true,
+                        onComplete: () => { throwTarget = null; },
+                        onKill: () => { throwTarget = null; }
+                    });
+                } else {
+                    throwTarget = null;
+                    gallerySection.scrollLeft = s + jump;
+                }
+            }
+
+            function loop() {
+                const s = gallerySection.scrollLeft;
+                const max = gallerySection.scrollWidth - gallerySection.clientWidth;
+                if (s <= pad + BUFFER) wrap(1);
+                else if (s >= max - BUFFER) wrap(-1);
+                requestAnimationFrame(loop);
+            }
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(initInfiniteScroll);
+
+    }
+
+    const galleryFocus = document.getElementById('galleryFocus');
+    const galleryFocusImg = document.getElementById('galleryFocusImg');
+    const galleryFocusInner = document.querySelector('.gallery-focus-inner');
+    const galleryFocusClose = document.getElementById('galleryFocusClose');
+    let currentFocusIndex = 0;
+
+    function goToFocusImage(index) {
+        if (!galleryFocusImg || !galleryFocusInner || !galleryOrder.length) return;
+        const len = galleryOrder.length;
+        const prevIndex = currentFocusIndex;
+        currentFocusIndex = ((index % len) + len) % len;
+        const newSrc = galleryOrder[currentFocusIndex];
+        const dir = index > prevIndex ? 1 : -1;
+        galleryFocusInner.className = 'gallery-focus-inner gallery-focus-slide-out-' + (dir === 1 ? 'left' : 'right');
+        function onOutEnd(e) {
+            if (e.propertyName !== 'transform') return;
+            galleryFocusInner.removeEventListener('transitionend', onOutEnd);
+            galleryFocusImg.src = newSrc;
+            galleryFocusInner.className = 'gallery-focus-inner gallery-focus-slide-in-from-' + (dir === 1 ? 'right' : 'left') + ' gallery-focus-slide-no-transition';
+            void galleryFocusInner.offsetHeight;
+            requestAnimationFrame(function() {
+                galleryFocusInner.classList.remove('gallery-focus-slide-no-transition');
+                galleryFocusInner.classList.add('gallery-focus-slide-active');
+            });
+            function onInEnd(e2) {
+                if (e2.propertyName !== 'transform') return;
+                galleryFocusInner.removeEventListener('transitionend', onInEnd);
+                galleryFocusInner.className = 'gallery-focus-inner';
+            }
+            galleryFocusInner.addEventListener('transitionend', onInEnd);
+        }
+        galleryFocusInner.addEventListener('transitionend', onOutEnd);
+    }
+
+    function openGalleryFocus(src, wrapEl) {
+        if (!galleryFocus || !galleryFocusImg || !galleryFocusInner || !wrapEl || !gallerySection || !galleryTrack) return;
+        const wraps = Array.from(galleryTrack.querySelectorAll('.gallery-img-wrap'));
+        const wrapIndex = wraps.indexOf(wrapEl);
+        const len = PRELOAD_HERO_IMAGES.length;
+        currentFocusIndex = wrapIndex >= 0 ? wrapIndex % len : 0;
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
+        galleryFocusImg.src = src;
+        const centerX = wrapEl.offsetLeft + wrapEl.offsetWidth / 2;
+        const others = wraps.filter((w) => w !== wrapEl);
+        const byDist = others.map((w) => ({
+            el: w,
+            d: Math.abs((w.offsetLeft + w.offsetWidth / 2) - centerX)
+        })).sort((a, b) => a.d - b.d);
+        const staggerByEl = new Map();
+        byDist.forEach((item, i) => { staggerByEl.set(item.el, i * 0.035); });
+
+        document.body.classList.add('gallery-focus-open');
+        const tl = gsap.timeline();
+        tl.to(wrapEl, { opacity: 0, duration: 0.3, ease: 'power2.out' }, 0);
+        tl.to(others, {
+            opacity: 0,
+            duration: 0.5,
+            stagger: (i, el) => staggerByEl.get(el) || 0,
+            ease: 'power2.out'
+        }, 0.08);
+        tl.add(function() {
+            galleryFocus.classList.add('is-open');
+            galleryFocus.setAttribute('aria-hidden', 'false');
+            afterNextFrame(function() { galleryFocus.classList.add('is-visible'); });
+        }, 0.55);
+    }
+
+    function closeGalleryFocus() {
+        if (!galleryFocus) return;
+        const wraps = galleryTrack?.querySelectorAll('.gallery-img-wrap');
+        document.body.classList.add('gallery-focus-closing');
+        document.body.classList.remove('gallery-focus-open');
+        galleryFocus.classList.add('gallery-focus-closing');
+        galleryFocus.classList.remove('is-visible');
+        onTransitionEnd(galleryFocus, 'opacity', function() {
+            galleryFocus.classList.remove('is-open', 'gallery-focus-closing');
+            galleryFocus.setAttribute('aria-hidden', 'true');
+            galleryFocus.style.removeProperty('opacity');
+            galleryFocus.style.removeProperty('background-color');
+            if (galleryFocusInner) galleryFocusInner.className = 'gallery-focus-inner';
+            if (galleryFocusClose) galleryFocusClose.style.removeProperty('opacity');
+
+            if (wraps && gallerySection) {
+                gsap.set(wraps, { opacity: 1, y: 0 });
+                runGalleryEntranceAnimation(wraps, gallerySection, 0.06);
+            }
+            document.body.classList.remove('gallery-focus-closing');
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
+        });
+    }
+
+    const galleryFocusPrev = document.getElementById('galleryFocusPrev');
+    const galleryFocusNext = document.getElementById('galleryFocusNext');
+
+    if (galleryFocusClose) {
+        galleryFocusClose.addEventListener('click', function(e) {
+            e.stopPropagation();
+            closeGalleryFocus();
+        });
+    }
+    if (galleryFocusPrev) {
+        galleryFocusPrev.addEventListener('click', function(e) {
+            e.stopPropagation();
+            goToFocusImage(currentFocusIndex - 1);
+        });
+    }
+    if (galleryFocusNext) {
+        galleryFocusNext.addEventListener('click', function(e) {
+            e.stopPropagation();
+            goToFocusImage(currentFocusIndex + 1);
+        });
+    }
+    if (galleryFocus) {
+        const arrowLeftThreshold = 0.35;
+        const arrowRightThreshold = 0.65;
+        if (mobile) {
+            let focusSwipeStartX = 0;
+            galleryFocus.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) focusSwipeStartX = e.touches[0].pageX;
+            }, { passive: true });
+            galleryFocus.addEventListener('touchend', (e) => {
+                if (!e.changedTouches?.length || !galleryFocus.classList.contains('is-open')) return;
+                const dx = e.changedTouches[0].pageX - focusSwipeStartX;
+                if (Math.abs(dx) > 50) {
+                    if (dx < 0) goToFocusImage(currentFocusIndex + 1);
+                    else goToFocusImage(currentFocusIndex - 1);
+                }
+            }, { passive: true });
+        }
+        galleryFocus.addEventListener('mousemove', function(e) {
+            if (!galleryFocus.classList.contains('is-open')) return;
+            const w = window.innerWidth;
+            const x = e.clientX / w;
+            if (galleryFocusPrev) {
+                galleryFocusPrev.classList.toggle('is-visible', x < arrowLeftThreshold);
+            }
+            if (galleryFocusNext) {
+                galleryFocusNext.classList.toggle('is-visible', x > arrowRightThreshold);
+            }
+        });
+        galleryFocus.addEventListener('mouseleave', function() {
+            if (galleryFocusPrev) galleryFocusPrev.classList.remove('is-visible');
+            if (galleryFocusNext) galleryFocusNext.classList.remove('is-visible');
+        });
+        galleryFocus.addEventListener('click', function(e) {
+            if (e.target.closest('.gallery-focus-close') || e.target.closest('.gallery-focus-prev') || e.target.closest('.gallery-focus-next')) return;
+            const x = e.clientX / window.innerWidth;
+            if (x < arrowLeftThreshold) {
+                goToFocusImage(currentFocusIndex - 1);
+            } else if (x > arrowRightThreshold) {
+                goToFocusImage(currentFocusIndex + 1);
+            }
+        });
+    }
+});
